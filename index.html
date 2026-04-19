@@ -730,7 +730,17 @@ function renderEntries() {
   empty.style.display = 'none';
   titleWrap.innerHTML = `<div class="section-title">${period.label} の利用履歴（${inPeriod.length}件）</div>`;
 
-  list.innerHTML = inPeriod.map(e => `
+  // 日付の新しい順に並べ替え（同日は追加順を維持）
+  const sorted = [...inPeriod].sort((a, b) => {
+    const da = parseEntryDate(a.date, period);
+    const db = parseEntryDate(b.date, period);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return db - da; // 新しい順
+  });
+
+  list.innerHTML = sorted.map(e => `
     <div class="card ${e.active ? '' : 'off'}" id="card-${e.id}">
       <div class="card-top">
         <span class="card-date">${escHtml(e.date)}</span>
