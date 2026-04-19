@@ -88,7 +88,34 @@
       font-weight: 700;
       letter-spacing: -.02em;
       margin: 2px 0;
+      cursor: pointer;
+      -webkit-user-select: none; user-select: none;
     }
+    #total-display.pressed { opacity: .6; }
+    #copy-hint {
+      font-size: 10px;
+      opacity: .55;
+      margin-top: 1px;
+      letter-spacing: .04em;
+    }
+    /* トースト通知 */
+    #toast {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: rgba(0,0,0,.78);
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 22px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 300;
+      transition: opacity .25s, transform .25s;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     #entry-count {
       font-size: 11px;
       opacity: .7;
@@ -303,6 +330,7 @@
   </div>
   <div class="sublabel">集計ONの合計（期間内）</div>
   <div id="total-display">¥ 0</div>
+  <div id="copy-hint">長押しでコピー</div>
   <div id="entry-count">0件を集計中</div>
 </div>
 
@@ -968,6 +996,63 @@ if ('serviceWorker' in navigator) {
   const blob = new Blob([sw], { type: 'application/javascript' });
   navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
 }
+
+// =====================================================
+// トースト通知
+// =====================================================
+function showToast(msg) {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+// =====================================================
+// 合計金額の長押しコピー
+// =====================================================
+(function setupTotalCopy() {
+  const el = document.getElementById('total-display');
+  let timer = null;
+
+  function onStart() {
+    el.classList.add('pressed');
+    timer = setTimeout(async () => {
+      // "¥ 3,864" → "3864"（数字のみ）
+      const raw = el.textContent.replace(/[^\d]/g, '');
+      if (!raw || raw === '0') {
+        showToast('集計金額が0円です');
+        el.classList.remove('pressed');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(raw);
+        showToast('¥' + parseInt(raw).toLocaleString('ja-JP') + ' をコピーしました');
+      } catch {
+        showToast('コピーできませんでした');
+      }
+      el.classList.remove('pressed');
+    }, 600);
+  }
+
+  function onEnd() {
+    clearTimeout(timer);
+    timer = null;
+    el.classList.remove('pressed');
+  }
+
+  el.addEventListener('touchstart', onStart, { passive: true });
+  el.addEventListener('touchend',   onEnd);
+  el.addEventListener('touchmove',  onEnd);
+  // PC（マウス）でも動作するよう対応
+  el.addEventListener('mousedown',  onStart);
+  el.addEventListener('mouseup',    onEnd);
+  el.addEventListener('mouseleave', onEnd);
+})();
 
 // =====================================================
 // 初期化
