@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Suica管理">
+  <meta name="theme-color" content="#00B900">
+  <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Suica%20SF%E5%88%A9%E7%94%A8%E5%B1%A5%E6%AD%B4%E7%AE%A1%E7%90%86%22%2C%22short_name%22%3A%22Suica%E7%AE%A1%E7%90%86%22%2C%22display%22%3A%22standalone%22%2C%22start_url%22%3A%22.%2F%22%2C%22theme_color%22%3A%22%2300B900%22%2C%22background_color%22%3A%22%23f0f4f0%22%7D">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v5/dist/tesseract.min.js"></script>
+  <title>Suica SF 利用履歴管理</title>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:      #00B900;
+      --green-dark: #009900;
+      --green-bg:   #e8f8e8;
+      --gray:       #888;
+      --light:      #f0f4f0;
+      --white:      #ffffff;
+      --danger:     #d9534f;
+      --radius:     14px;
+      --shadow:     0 2px 10px rgba(0,0,0,.12);
+    }
+
+    html, body {
+      background: var(--light);
+      font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+      color: #222;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ===== ヘッダー ===== */
+    #header {
+      background: linear-gradient(135deg, var(--green-dark), var(--green));
+      color: var(--white);
+      padding: 44px 16px 20px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+
+    /* 期間ナビゲーション */
+    #period-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .period-btn {
+      background: rgba(255,255,255,.2);
+      border: none;
+      color: var(--white);
+      font-size: 20px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .period-btn:active { background: rgba(255,255,255,.4); }
+    .period-btn:disabled { opacity: .3; pointer-events: none; }
+
+    #period-label {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      flex: 1;
+    }
+    #header .sublabel {
+      font-size: 11px;
+      opacity: .75;
+      margin-bottom: 2px;
+    }
+    #total-display {
+      font-size: 46px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      margin: 2px 0;
+    }
+    #entry-count {
+      font-size: 11px;
+      opacity: .7;
+    }
+
+    /* ===== メインコンテンツ ===== */
+    #main {
+      padding: 16px 14px 110px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* ===== アップロードエリア ===== */
+    #upload-area {
+      background: var(--white);
+      border: 2.5px dashed var(--green);
+      border-radius: var(--radius);
+      padding: 20px 16px;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 14px;
+      transition: background .15s;
+      -webkit-user-select: none; user-select: none;
+    }
+    #upload-area:active { background: var(--green-bg); }
+    #upload-area .icon { font-size: 32px; margin-bottom: 5px; }
+    #upload-area .text { font-size: 15px; font-weight: 600; color: var(--green); }
+    #upload-area .sub  { font-size: 12px; color: var(--gray); margin-top: 3px; }
+    #file-input { display: none; }
+
+    /* ===== 進捗バー ===== */
+    #progress-area {
+      display: none;
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }
+    #progress-area.active { display: block; }
+    #progress-label { font-size: 13px; color: var(--gray); margin-bottom: 7px; }
+    #progress-bar-wrap { background: #ddd; border-radius: 8px; height: 10px; overflow: hidden; }
+    #progress-bar { background: var(--green); height: 100%; width: 0%; border-radius: 8px; transition: width .3s ease; }
+
+    /* ===== メッセージ ===== */
+    .msg-box {
+      display: none;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 14px;
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .msg-box.active { display: block; }
+    #error-msg { background: #ffeaea; border: 1px solid #f5c6c6; color: var(--danger); }
+    #info-msg  { background: #e8f8e8; border: 1px solid #b0e0b0; color: #1a6a1a; }
+
+    /* ===== セクションタイトル ===== */
+    .section-title {
+      font-size: 12px; font-weight: 600; color: var(--gray);
+      letter-spacing: .08em; margin: 14px 4px 8px;
+    }
+
+    /* ===== カード ===== */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px 14px 12px;
+      margin-bottom: 10px;
+      transition: opacity .2s;
+    }
+    .card.off { opacity: .5; }
+    /* 現在の集計期間外はグレー左ボーダー */
+    .card.out-of-period {
+      border-left: 3px solid #ccc;
+      background: #fafafa;
+    }
+    .card-top { display: flex; align-items: center; gap: 8px; }
+    .card-date { font-size: 13px; color: var(--gray); min-width: 40px; flex-shrink: 0; }
+    .card-location {
+      flex: 1; font-size: 14px; font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .card-amount { font-size: 17px; font-weight: 700; color: #c00; flex-shrink: 0; }
+    .card-amount.active { color: var(--green-dark); }
+
+    .period-badge {
+      font-size: 10px; background: #eee; color: #999;
+      border-radius: 4px; padding: 1px 5px;
+      margin-left: 4px; vertical-align: middle; flex-shrink: 0;
+    }
+
+    /* トグル */
+    .toggle-wrap { flex-shrink: 0; }
+    .toggle { position: relative; display: inline-block; width: 50px; height: 28px; }
+    .toggle input { display: none; }
+    .slider {
+      position: absolute; inset: 0; background: #ccc;
+      border-radius: 28px; cursor: pointer; transition: background .25s;
+    }
+    .slider::before {
+      content: ''; position: absolute;
+      width: 22px; height: 22px; left: 3px; bottom: 3px;
+      background: var(--white); border-radius: 50%;
+      transition: transform .25s; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    }
+    .toggle input:checked + .slider { background: var(--green); }
+    .toggle input:checked + .slider::before { transform: translateX(22px); }
+
+    /* メモ */
+    .card-memo { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    .card-memo input {
+      width: 100%; border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 8px 12px; font-size: 14px; background: var(--light); color: #333;
+      outline: none; transition: border .15s;
+    }
+    .card-memo input:focus { border-color: var(--green); background: var(--white); }
+    .card-memo input::placeholder { color: #bbb; }
+
+    /* 空状態 */
+    #empty-state { text-align: center; padding: 40px 20px; color: var(--gray); }
+    #empty-state .icon { font-size: 52px; margin-bottom: 12px; }
+    #empty-state .msg { font-size: 15px; }
+    #empty-state .sub { font-size: 13px; margin-top: 6px; opacity: .7; }
+
+    /* フッター */
+    #footer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--white); border-top: 1px solid #e0e0e0;
+      padding: 12px 16px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      max-width: 480px; margin: 0 auto;
+    }
+    #reset-btn {
+      width: 100%; padding: 14px;
+      background: var(--white); color: var(--danger);
+      border: 2px solid var(--danger); border-radius: var(--radius);
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    #reset-btn:active { background: var(--danger); color: var(--white); }
+
+    /* ローディング */
+    #loading-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.45); z-index: 200;
+      align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+    }
+    #loading-overlay.active { display: flex; }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 5px solid rgba(255,255,255,.3); border-top-color: var(--white);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: var(--white); font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <!-- 期間ナビゲーション（◀▶で月を切り替え） -->
+  <div id="period-nav">
+    <button class="period-btn" id="btn-prev" onclick="changePeriod(-1)" title="前の期間">&#8249;</button>
+    <span id="period-label">読み込み中...</span>
+    <button class="period-btn" id="btn-next" onclick="changePeriod(+1)" title="次の期間">&#8250;</button>
+  </div>
+  <div class="sublabel">集計ONの合計（期間内）</div>
+  <div id="total-display">¥ 0</div>
+  <div id="entry-count">0件を集計中</div>
+</div>
+
+<div id="main">
+  <div id="upload-area" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📷</div>
+    <div class="text">スクリーンショットを追加</div>
+    <div class="sub">タップして画像を選択（複数可）</div>
+  </div>
+  <input type="file" id="file-input" accept="image/*" multiple>
+
+  <div id="error-msg" class="msg-box"></div>
+  <div id="info-msg"  class="msg-box"></div>
+
+  <div id="progress-area">
+    <div id="progress-label">文字を読み取り中...</div>
+    <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+  </div>
+
+  <div id="section-title-wrap"></div>
+  <div id="entries-list"></div>
+
+  <div id="empty-state">
+    <div class="icon">🚉</div>
+    <div class="msg">履歴がありません</div>
+    <div class="sub">上のボタンからスクリーンショットを追加してください</div>
+  </div>
+</div>
+
+<div id="footer">
+  <button id="reset-btn" onclick="confirmReset()">🗑 全データをリセット</button>
+</div>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">読み込み中...</div>
+</div>
+
+<canvas id="preprocess-canvas" style="display:none;"></canvas>
+
+<script>
+'use strict';
+
+// =====================================================
+// 集計期間の管理
+// 「periodYM」= 集計期間の開始月（25日スタート）を表す {year, month(0-indexed)}
+// 例: {year:2026, month:2} → 2026/3/25 〜 2026/4/24
+// =====================================================
+
+// 今日の日付から初期の集計期間を計算
+function initPeriodYM() {
+  const today = new Date();
+  let y = today.getFullYear();
+  let m = today.getMonth(); // 0-indexed
+  if (today.getDate() < 25) {
+    // 今月24日以前 → 先月25日始まり
+    m--;
+    if (m < 0) { y--; m = 11; }
+  }
+  return { year: y, month: m };
+}
+
+// {year, month} → 集計期間オブジェクト
+function getPeriodFromYM(ym) {
+  const sy = ym.year, sm = ym.month;
+  let ey = sy, em = sm + 1;
+  if (em > 11) { ey++; em = 0; }
+  const label = (sy === ey)
+    ? `${sy}/${sm + 1}/25 〜 ${em + 1}/24`
+    : `${sy}/${sm + 1}/25 〜 ${ey}/${em + 1}/24`;
+  return {
+    start: new Date(sy, sm, 25, 0, 0, 0),
+    end:   new Date(ey, em, 24, 23, 59, 59),
+    label,
+    ym
+  };
+}
+
+// 現在の集計期間（今月分）
+function getCurrentPeriodYM() {
+  const today = new Date();
+  let y = today.getFullYear();
+  let m = today.getMonth();
+  if (today.getDate() < 25) {
+    m--;
+    if (m < 0) { y--; m = 11; }
+  }
+  return { year: y, month: m };
+}
+
+// 同じ期間か比較
+function isSamePeriod(a, b) {
+  return a.year === b.year && a.month === b.month;
+}
+
+// 現在表示している集計期間（グローバル状態）
+let periodYM = initPeriodYM();
+
+// 期間を前後に移動
+function changePeriod(delta) {
+  let { year, month } = periodYM;
+  month += delta;
+  if (month > 11) { year++; month = 0; }
+  if (month < 0)  { year--; month = 11; }
+  periodYM = { year, month };
+  renderEntries();
+}
+
+// =====================================================
+// データ管理
+// =====================================================
+const STORAGE_KEY = 'suica_entries_v3';
+
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveEntries(entries) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+// =====================================================
+// 日付文字列 "4/17" → Date オブジェクト
+// 比較する period を渡すと、その期間に近い年を優先して推定する
+// =====================================================
+function parseEntryDate(dateStr, period) {
+  if (!dateStr || dateStr === '日付不明') return null;
+  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const mo = parseInt(m[1], 10) - 1;
+  const dy = parseInt(m[2], 10);
+
+  // period が渡された場合はその期間に含まれる年を優先
+  if (period) {
+    for (let offset = 0; offset <= 2; offset++) {
+      const year = period.start.getFullYear() - offset;
+      const dt = new Date(year, mo, dy);
+      if (dt >= period.start && dt <= period.end) return dt;
+    }
+    // 見つからない場合は近い年で近似
+    const dt = new Date(period.start.getFullYear(), mo, dy);
+    return dt;
+  }
+
+  // period なし → 今日を基準に過去日付と判断
+  const today = new Date();
+  const dt = new Date(today.getFullYear(), mo, dy);
+  if (dt > today) return new Date(today.getFullYear() - 1, mo, dy);
+  return dt;
+}
+
+// 集計期間内かチェック
+function isInPeriod(entry, period) {
+  const dt = parseEntryDate(entry.date, period);
+  if (!dt) return true;
+  return dt >= period.start && dt <= period.end;
+}
+
+// =====================================================
+// 重複防止キー（日付 + 金額 + 場所）
+// =====================================================
+function dedupKey(e) {
+  return `${e.date}|${e.amount}|${e.location}`;
+}
+
+// =====================================================
+// テキスト後処理ユーティリティ
+// =====================================================
+
+// 漢字・ひらがな・カタカナの間にある余分なスペースを除去
+// 例: "都 人 形 町" → "都人形町"
+function removeJpSpaces(text) {
+  let prev;
+  do {
+    prev = text;
+    text = text.replace(
+      /([\u3040-\u9fff\uff00-\uffef])\s+([\u3040-\u9fff\uff00-\uffef])/g,
+      '$1$2'
+    );
+  } while (text !== prev);
+  return text;
+}
+
+// 駅名文字列の整形
+//   - 残高（¥3,428 や OCR誤認の \3,428）を除去
+//   - 同行に別の入出駅が続く場合は手前で切る
+//   - 日本語文字間のスペースを除去
+function cleanStation(raw) {
+  let text = raw;
+  // 残高パターン: ¥3,428 / ￥3,428 / \3,428（OCRがバックスラッシュと誤認）
+  text = text.replace(/[¥￥\\]\s*[\d,]+/g, '');
+  // 「入 〇〇」「出 〇〇」が続く部分で切る（同行に複数駅が混在するケース）
+  text = text.replace(/\s+[入出]\s+.+$/, '');
+  // 末尾のマイナス金額を除去
+  text = text.replace(/-[\d,]+\s*$/, '');
+  // 日本語文字間スペースを除去
+  text = removeJpSpaces(text);
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+// =====================================================
+// OCR テキスト解析（マルチライン対応）
+//
+// Suica SF履歴の典型的なOCR出力:
+//   04/18          ← 日付行
+//   物販            ← 種別
+//   ¥2,926         ← 残高（無視）
+//   -764           ← 利用金額
+//
+//   04/17          ← 日付行
+//   入 戸越         ← 入場駅
+//   出 都人形町      ← 出場駅
+//   -272           ← 利用金額
+//
+// または同一行にまとめて出力される場合もあるため両対応
+// =====================================================
+function parseSuicaText(rawText) {
+  const entries = [];
+  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+  let curDate = null;
+  let curIn   = null;
+  let curOut  = null;
+  let curType = null;
+
+  // エントリを確定して追加
+  function flush(amount) {
+    if (amount >= 0) return; // チャージ（プラス）はスキップ
+    let loc;
+    if (curIn && curOut) loc = `${curIn}→${curOut}`;
+    else if (curOut)     loc = curOut;
+    else if (curIn)      loc = curIn;
+    else if (curType)    loc = curType;
+    else                 loc = '場所不明';
+    entries.push({
+      id:       `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      date:     curDate || '日付不明',
+      location: loc,
+      amount,
+      active:   true,
+      memo:     ''
+    });
+    curIn = null; curOut = null; curType = null;
+  }
+
+  // 行末の -XXX を抽出
+  function trailingMinus(text) {
+    const m = text.match(/-\s*([\d,]+)\s*$/);
+    return m ? -parseInt(m[1].replace(/,/g, ''), 10) : null;
+  }
+
+  for (const line of lines) {
+    // 残高行（¥2,926）はスキップ
+    if (/^[¥￥\\]\s*[\d,]/.test(line)) continue;
+    // チャージ額（正の数字のみ）はスキップ
+    if (/^\+?[\d,]+\s*$/.test(line) && !line.includes('/')) continue;
+
+    // ── 日付行（04/18 や 4/18） ──
+    const dateM = line.match(/^(\d{1,2})\/(\d{1,2})\s*(.*)/);
+    if (dateM) {
+      curDate = `${+dateM[1]}/${+dateM[2]}`;
+      const rest = dateM[3].trim();
+      if (!rest) continue;
+
+      if (/^入/.test(rest)) {
+        // 日付 + 入場駅（例: "04/17 入 戸越 ¥3,428"）
+        // 同行に「出」も含む場合を処理
+        const noIn = rest.replace(/^入\s*/, '');
+        const outPos = noIn.search(/\s+出\s+/);
+        if (outPos >= 0) {
+          curIn  = cleanStation(noIn.slice(0, outPos));
+          curOut = cleanStation(noIn.slice(outPos).replace(/^\s+出\s*/, ''));
+        } else {
+          curIn = cleanStation(noIn);
+        }
+        const am = trailingMinus(rest);
+        if (am !== null) flush(am);
+
+      } else if (/^出/.test(rest)) {
+        curOut = cleanStation(rest.replace(/^出\s*/, ''));
+        const am = trailingMinus(rest);
+        if (am !== null) flush(am);
+
+      } else if (/^(物販|オート|バス)/.test(rest)) {
+        const tm = rest.match(/^(物販|オート[^\s]*|バス[^\s]*)/);
+        if (tm) curType = tm[1];
+        const am = trailingMinus(rest);
+        if (am !== null) flush(am);
+
+      } else {
+        const am = trailingMinus(rest);
+        if (am !== null) flush(am);
+      }
+      continue;
+    }
+
+    // ── 入場駅 ──
+    if (/^入/.test(line)) {
+      const noIn = line.replace(/^入\s*/, '');
+      // 同行に「出」も含む場合
+      const outPos = noIn.search(/\s+出\s+/);
+      if (outPos >= 0) {
+        curIn  = cleanStation(noIn.slice(0, outPos));
+        curOut = cleanStation(noIn.slice(outPos).replace(/^\s+出\s*/, ''));
+      } else {
+        curIn = cleanStation(noIn);
+      }
+      const am = trailingMinus(line);
+      if (am !== null) flush(am);
+      continue;
+    }
+
+    // ── 出場駅 ──
+    if (/^出/.test(line)) {
+      curOut = cleanStation(line.replace(/^出\s*/, ''));
+      const am = trailingMinus(line);
+      if (am !== null) flush(am);
+      continue;
+    }
+
+    // ── 種別（物販・オートチャージ等） ──
+    if (/^(物販|オート|バス)/.test(line)) {
+      const tm = line.match(/^(物販|オート[^\s]*|バス[^\s]*)/);
+      if (tm) curType = tm[1];
+      const am = trailingMinus(line);
+      if (am !== null) flush(am);
+      continue;
+    }
+
+    // ── マイナス金額（単独行: -764） ──
+    const minusM = line.match(/^-\s*([\d,]+)\s*$/);
+    if (minusM) {
+      flush(-parseInt(minusM[1].replace(/,/g, ''), 10));
+      continue;
+    }
+
+    // ── 行末にマイナス金額が含まれる行 ──
+    const am = trailingMinus(line);
+    if (am !== null) flush(am);
+  }
+
+  return entries;
+}
+
+// =====================================================
+// HTML エスケープ
+// =====================================================
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// =====================================================
+// UI 描画
+// =====================================================
+function renderEntries() {
+  const entries    = loadEntries();
+  const period     = getPeriodFromYM(periodYM);
+  const currentYM  = getCurrentPeriodYM();
+  const isLatest   = isSamePeriod(periodYM, currentYM);
+
+  // ヘッダー更新
+  document.getElementById('period-label').textContent = period.label;
+  document.getElementById('btn-next').disabled = isLatest; // 現在期間より未来はなし
+
+  const inPeriod   = entries.filter(e => isInPeriod(e, period));
+  const activeInP  = inPeriod.filter(e => e.active);
+  const total      = activeInP.reduce((s, e) => s + Math.abs(e.amount), 0);
+
+  document.getElementById('total-display').textContent =
+    '¥ ' + total.toLocaleString('ja-JP');
+  document.getElementById('entry-count').textContent =
+    `${activeInP.length}件集計中（期間内${inPeriod.length}件 / 全${entries.length}件）`;
+
+  const list      = document.getElementById('entries-list');
+  const empty     = document.getElementById('empty-state');
+  const titleWrap = document.getElementById('section-title-wrap');
+
+  // 選択中の期間のデータだけ表示する
+  if (inPeriod.length === 0) {
+    list.innerHTML = '';
+    titleWrap.innerHTML = '';
+    empty.querySelector('.msg').textContent = 'この期間のデータはありません';
+    empty.querySelector('.sub').textContent = '◀ で過去の期間を確認、または画像を追加してください';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.querySelector('.msg').textContent = '履歴がありません';
+  empty.querySelector('.sub').textContent = '上のボタンからスクリーンショットを追加してください';
+  empty.style.display = 'none';
+  titleWrap.innerHTML = `<div class="section-title">${period.label} の利用履歴（${inPeriod.length}件）</div>`;
+
+  list.innerHTML = inPeriod.map(e => `
+    <div class="card ${e.active ? '' : 'off'}" id="card-${e.id}">
+      <div class="card-top">
+        <span class="card-date">${escHtml(e.date)}</span>
+        <span class="card-location" title="${escHtml(e.location)}">${escHtml(e.location)}</span>
+        <span class="card-amount ${e.active ? 'active' : ''}">
+          -¥${Math.abs(e.amount).toLocaleString('ja-JP')}
+        </span>
+        <div class="toggle-wrap">
+          <label class="toggle">
+            <input type="checkbox" ${e.active ? 'checked' : ''}
+              onchange="toggleEntry('${e.id}', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="card-memo">
+        <input type="text" placeholder="メモ（例：通勤、ランチ）"
+          value="${escHtml(e.memo)}"
+          oninput="updateMemo('${e.id}', this.value)"
+          maxlength="30">
+      </div>
+    </div>
+  `).join('');
+}
+
+// =====================================================
+// 合計だけ再計算（トグル時に使用）
+// =====================================================
+function refreshTotal() {
+  const entries = loadEntries();
+  const period  = getPeriodFromYM(periodYM);
+  const inP     = entries.filter(e => isInPeriod(e, period));
+  const activeInP = inP.filter(e => e.active);
+  const total = activeInP.reduce((s, e) => s + Math.abs(e.amount), 0);
+  document.getElementById('total-display').textContent =
+    '¥ ' + total.toLocaleString('ja-JP');
+  document.getElementById('entry-count').textContent =
+    `${activeInP.length}件集計中（期間内${inP.length}件 / 全${entries.length}件）`;
+}
+
+// =====================================================
+// 操作ハンドラ
+// =====================================================
+function toggleEntry(id, checked) {
+  const entries = loadEntries();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  entry.active = checked;
+  saveEntries(entries);
+  const card = document.getElementById('card-' + id);
+  if (card) {
+    card.classList.toggle('off', !checked);
+    const amEl = card.querySelector('.card-amount');
+    if (amEl) amEl.classList.toggle('active', checked);
+  }
+  refreshTotal();
+}
+
+function updateMemo(id, value) {
+  const entries = loadEntries();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  entry.memo = value;
+  saveEntries(entries);
+}
+
+function confirmReset() {
+  if (!confirm('全ての履歴データを削除してリセットしますか？\nこの操作は元に戻せません。')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  renderEntries();
+}
+
+// =====================================================
+// 画像前処理（OCR精度向上）
+// =====================================================
+function preprocessImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale  = img.width < 800 ? 800 / img.width : 1;
+      const canvas = document.getElementById('preprocess-canvas');
+      canvas.width  = img.width  * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d  = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const g  = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+        const en = Math.min(255, Math.max(0, (g - 128) * 1.4 + 128));
+        d[i] = d[i+1] = d[i+2] = en;
+      }
+      ctx.putImageData(id, 0, 0);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas);
+    };
+    img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// =====================================================
+// OCR 実行
+// =====================================================
+async function runOCR(file) {
+  const elProgress = document.getElementById('progress-area');
+  const elBar      = document.getElementById('progress-bar');
+  const elLabel    = document.getElementById('progress-label');
+  const elError    = document.getElementById('error-msg');
+  const elInfo     = document.getElementById('info-msg');
+  const elOverlay  = document.getElementById('loading-overlay');
+  const elLoading  = document.getElementById('loading-text');
+
+  elProgress.classList.add('active');
+  elError.classList.remove('active');
+  elInfo.classList.remove('active');
+  elOverlay.classList.add('active');
+  elLoading.textContent = '画像を準備中...';
+  elBar.style.width = '0%';
+
+  try {
+    elLoading.textContent = '画像を処理中...';
+    const canvas = await preprocessImage(file);
+
+    elLoading.textContent = '文字を認識中...';
+    const { createWorker } = Tesseract;
+    const worker = await createWorker('jpn+eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round(m.progress * 100);
+          elBar.style.width = pct + '%';
+          elLabel.textContent = `文字を読み取り中... ${pct}%`;
+        }
+      }
+    });
+
+    const result = await worker.recognize(canvas);
+    await worker.terminate();
+
+    const rawText = result.data.text;
+    console.log('[OCR生テキスト]\n', rawText);
+
+    const newEntries = parseSuicaText(rawText);
+
+    if (newEntries.length === 0) {
+      elInfo.textContent = '金額（マイナスの数字）が読み取れませんでした。より鮮明なスクリーンショットで試してください。';
+      elInfo.classList.add('active');
+    } else {
+      const existing  = loadEntries();
+      const existKeys = new Set(existing.map(dedupKey));
+      const toAdd     = newEntries.filter(e => !existKeys.has(dedupKey(e)));
+      const skipped   = newEntries.length - toAdd.length;
+
+      if (toAdd.length === 0) {
+        elInfo.textContent = `${newEntries.length}件を読み取りましたが、すべて登録済みでした（重複スキップ）。`;
+        elInfo.classList.add('active');
+      } else {
+        saveEntries([...toAdd, ...existing]);
+        renderEntries();
+        elInfo.textContent = `${toAdd.length}件を追加しました。` +
+          (skipped > 0 ? `（${skipped}件は重複スキップ）` : '');
+        elInfo.classList.add('active');
+      }
+    }
+
+  } catch (err) {
+    console.error(err);
+    elError.textContent = 'エラーが発生しました：' + err.message;
+    elError.classList.add('active');
+  } finally {
+    elProgress.classList.remove('active');
+    elOverlay.classList.remove('active');
+  }
+}
+
+// =====================================================
+// ファイル選択
+// =====================================================
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  for (const f of files) await runOCR(f);
+  e.target.value = '';
+});
+
+// =====================================================
+// Service Worker（オフライン対応）
+// =====================================================
+if ('serviceWorker' in navigator) {
+  const sw = `
+    const C='suica-pwa-v3';
+    self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(['./']))));
+    self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));
+  `;
+  const blob = new Blob([sw], { type: 'application/javascript' });
+  navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+}
+
+// =====================================================
+// 初期化
+// =====================================================
+renderEntries();
+</script>
+</body>
+</html>
