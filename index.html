@@ -102,19 +102,47 @@
     }
 
     /* ===== アップロードエリア ===== */
+    /* アップロードエリア全体のラッパー */
+    #upload-wrap {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
     #upload-area {
+      flex: 1;
       background: var(--white);
       border: 2.5px dashed var(--green);
       border-radius: var(--radius);
       padding: 20px 16px;
       text-align: center;
       cursor: pointer;
-      margin-bottom: 14px;
+      margin-bottom: 0;
       transition: background .15s;
       -webkit-user-select: none; user-select: none;
     }
     #upload-area:active { background: var(--green-bg); }
     #upload-area .icon { font-size: 32px; margin-bottom: 5px; }
+
+    /* 貼り付けボタン */
+    #paste-btn {
+      flex-shrink: 0;
+      width: 72px;
+      background: var(--white);
+      border: 2.5px dashed #aaa;
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+      -webkit-user-select: none; user-select: none;
+      padding: 8px 4px;
+    }
+    #paste-btn:active { background: #f0f0f0; border-color: #888; }
+    #paste-btn .p-icon { font-size: 26px; }
+    #paste-btn .p-text { font-size: 11px; color: #666; font-weight: 600; text-align: center; line-height: 1.2; }
     #upload-area .text { font-size: 15px; font-weight: 600; color: var(--green); }
     #upload-area .sub  { font-size: 12px; color: var(--gray); margin-top: 3px; }
     #file-input { display: none; }
@@ -263,10 +291,16 @@
 </div>
 
 <div id="main">
-  <div id="upload-area" onclick="document.getElementById('file-input').click()">
-    <div class="icon">📷</div>
-    <div class="text">スクリーンショットを追加</div>
-    <div class="sub">タップして画像を選択（複数可）</div>
+  <div id="upload-wrap">
+    <div id="upload-area" onclick="document.getElementById('file-input').click()">
+      <div class="icon">📷</div>
+      <div class="text">スクリーンショットを追加</div>
+      <div class="sub">タップして選択（複数可）</div>
+    </div>
+    <div id="paste-btn" onclick="pasteFromClipboard()">
+      <div class="p-icon">📋</div>
+      <div class="p-text">コピーから<br>貼り付け</div>
+    </div>
   </div>
   <input type="file" id="file-input" accept="image/*" multiple>
 
@@ -827,6 +861,57 @@ async function runOCR(file) {
     elOverlay.classList.remove('active');
   }
 }
+
+// =====================================================
+// クリップボードから貼り付け（📋ボタン）
+// =====================================================
+async function pasteFromClipboard() {
+  const elInfo  = document.getElementById('info-msg');
+  const elError = document.getElementById('error-msg');
+  elInfo.classList.remove('active');
+  elError.classList.remove('active');
+
+  // Clipboard API が使えるか確認（iOSはHTTPS必須）
+  if (!navigator.clipboard || !navigator.clipboard.read) {
+    elError.textContent = '貼り付け機能はHTTPS環境（Vercel等）でのみ使えます。';
+    elError.classList.add('active');
+    return;
+  }
+
+  try {
+    const items = await navigator.clipboard.read();
+    let found = false;
+    for (const item of items) {
+      for (const type of item.types) {
+        if (type.startsWith('image/')) {
+          const blob = await item.getType(type);
+          const file = new File([blob], 'clipboard.png', { type });
+          await runOCR(file);
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) {
+      elInfo.textContent = 'クリップボードに画像がありません。iPhoneでスクリーンショットを「コピー」してから貼り付けてください。';
+      elInfo.classList.add('active');
+    }
+  } catch (err) {
+    // ユーザーが許可しなかった場合など
+    elError.textContent = '貼り付けが許可されませんでした。ポップアップが出たら「許可」を選んでください。';
+    elError.classList.add('active');
+  }
+}
+
+// ページ全体へのペーストイベント（長押し→ペーストでも動作）
+document.addEventListener('paste', async (e) => {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItem = items.find(i => i.type.startsWith('image/'));
+  if (!imageItem) return;
+  const file = imageItem.getAsFile();
+  if (file) await runOCR(file);
+});
 
 // =====================================================
 // ファイル選択
