@@ -227,15 +227,31 @@
     .toggle input:checked + .slider { background: var(--green); }
     .toggle input:checked + .slider::before { transform: translateX(22px); }
 
-    /* メモ */
-    .card-memo { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    /* メモ＋削除ボタン行 */
+    .card-memo { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; display: flex; gap: 8px; align-items: center; }
     .card-memo input {
-      width: 100%; border: 1px solid #e0e0e0; border-radius: 8px;
+      flex: 1; border: 1px solid #e0e0e0; border-radius: 8px;
       padding: 8px 12px; font-size: 14px; background: var(--light); color: #333;
       outline: none; transition: border .15s;
     }
     .card-memo input:focus { border-color: var(--green); background: var(--white); }
     .card-memo input::placeholder { color: #bbb; }
+
+    /* 個別削除ボタン */
+    .delete-btn {
+      flex-shrink: 0;
+      width: 36px; height: 36px;
+      background: none;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      color: #bbb;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s, border-color .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .delete-btn:active { background: var(--danger); color: var(--white); border-color: var(--danger); }
 
     /* 空状態 */
     #empty-state { text-align: center; padding: 40px 20px; color: var(--gray); }
@@ -707,6 +723,7 @@ function renderEntries() {
           value="${escHtml(e.memo)}"
           oninput="updateMemo('${e.id}', this.value)"
           maxlength="30">
+        <button class="delete-btn" onclick="deleteEntry('${e.id}')" title="削除">🗑</button>
       </div>
     </div>
   `).join('');
@@ -751,6 +768,22 @@ function updateMemo(id, value) {
   if (!entry) return;
   entry.memo = value;
   saveEntries(entries);
+}
+
+function deleteEntry(id) {
+  const entries = loadEntries();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  const label = `${entry.date} ${entry.location} -¥${Math.abs(entry.amount).toLocaleString('ja-JP')}`;
+  if (!confirm(`このデータを削除しますか？\n\n${label}`)) return;
+  saveEntries(entries.filter(e => e.id !== id));
+  // カードをフェードアウトして削除
+  const card = document.getElementById('card-' + id);
+  if (card) {
+    card.style.transition = 'opacity .25s';
+    card.style.opacity = '0';
+    setTimeout(() => renderEntries(), 260);
+  }
 }
 
 function confirmReset() {
